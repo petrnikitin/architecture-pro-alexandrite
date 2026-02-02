@@ -1,0 +1,50 @@
+@startuml Чтение каталога товаров (HTTP Cache + Redis)
+
+title Sequence диаграмма 3: Чтение каталога товаров\nСценарий: Клиент открывает интернет-магазин
+
+actor Customer
+participant Browser
+participant "Shop API" as API
+database Redis
+database "Shop DB" as DB
+
+Customer -> Browser: Открыть интернет-магазин
+Browser -> API: GET /api/catalog\nIf-None-Match: "v123"
+
+API -> Redis: GET shop_catalog:all
+
+alt Cache HIT + ETag совпадает
+    Redis --> API: [каталог + ETag: "v123"]
+    note right of API
+        ETag совпадает с запросом
+    end note
+    API --> Browser: 304 Not Modified
+    note left of Browser
+        Использует кеш браузера
+    end note
+    Browser --> Customer: Показать каталог (из кеша)
+
+else Cache HIT + ETag НЕ совпадает
+    Redis --> API: [каталог + ETag: "v124"]
+    API --> Browser: 200 OK + каталог\nETag: "v124"\nCache-Control: max-age=3600
+    Browser --> Customer: Показать каталог
+
+else Cache MISS
+    Redis --> API: null
+    API -> DB: SELECT * FROM products\nWHERE active=true
+    note right of DB
+        Запрос за ~500ms
+    end note
+    DB --> API: [список товаров]
+    API -> Redis: SET shop_catalog:all\n[данные] EX 3600
+    note right of Redis
+        TTL 1 час (3600 сек)
+    end note
+    API --> Browser: 200 OK + каталог\nETag: "v124"\nCache-Control: max-age=3600
+    note left of Browser
+        Браузер кеширует на 1 час
+    end note
+    Browser --> Customer: Показать каталог
+end
+
+@enduml

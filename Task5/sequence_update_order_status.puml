@@ -1,0 +1,42 @@
+@startuml Изменение статуса заказа с инвалидацией кеша
+
+title Sequence диаграмма 2: Изменение статуса заказа\nСценарий: Менеджер подтверждает заказ
+
+actor Seller
+participant "CRM UI" as CRM_UI
+participant "CRM API" as CRM_API
+database "Shop DB" as Shop_DB
+database Redis
+queue RabbitMQ
+
+Seller -> CRM_UI: Нажать "Подтвердить заказ"
+CRM_UI -> CRM_API: PUT /api/orders/ORD-12345/status\n{"status": "APPROVED"}
+CRM_API -> Shop_DB: UPDATE orders\nSET status='APPROVED'\nWHERE id='ORD-12345'
+Shop_DB --> CRM_API: OK
+
+note over CRM_API
+    Инвалидация кеша
+end note
+
+CRM_API -> Redis: DEL mes_dashboard:SUBMITTED:*
+CRM_API -> Redis: DEL mes_dashboard:APPROVED:*
+note right of Redis
+    Удаляем кеш для обоих статусов:
+    - старого (SUBMITTED)
+    - нового (APPROVED)
+end note
+
+CRM_API -> RabbitMQ: PUBLISH order.status_changed\n{"order_id": "ORD-12345",\n "status": "APPROVED"}
+note right of RabbitMQ
+    Event для других сервисов
+end note
+
+CRM_API --> CRM_UI: 200 OK
+CRM_UI --> Seller: Статус обновлён ✓
+
+note over Redis
+    Следующий запрос GET
+    заполнит кеш заново
+end note
+
+@enduml

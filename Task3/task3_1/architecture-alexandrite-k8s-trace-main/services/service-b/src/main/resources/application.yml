@@ -1,0 +1,11 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: service-b
+
+logging:
+  level:
+    com.alexandrite: INFO
+    io.opentelemetry: DEBUG

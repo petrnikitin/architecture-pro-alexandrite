@@ -1,0 +1,37 @@
+@startuml Чтение списка заказов (Cache-Aside)
+
+title Sequence диаграмма 1: Чтение списка заказов\nСценарий: Оператор открывает дашборд MES
+
+actor Operator
+participant "MES Dashboard" as Dashboard
+participant "MES API" as API
+database Redis
+database "MES DB" as DB
+
+Operator -> Dashboard: Открыть страницу заказов
+Dashboard -> API: GET /api/orders?status=SUBMITTED&page=1
+API -> Redis: GET mes_dashboard:SUBMITTED:1
+
+alt Cache HIT
+    Redis --> API: [данные из кеша]
+    note right of Redis
+        Возврат за ~5ms
+    end note
+    API --> Dashboard: 200 OK + список заказов
+else Cache MISS
+    Redis --> API: null
+    API -> DB: SELECT * FROM orders\nWHERE status=?\nLIMIT 20
+    note right of DB
+        Запрос за ~2000ms
+    end note
+    DB --> API: [результаты из БД]
+    API -> Redis: SET mes_dashboard:SUBMITTED:1\n[данные] EX 30
+    note right of Redis
+        Сохранить с TTL 30 сек
+    end note
+    API --> Dashboard: 200 OK + список заказов
+end
+
+Dashboard --> Operator: Отобразить список заказов
+
+@enduml
